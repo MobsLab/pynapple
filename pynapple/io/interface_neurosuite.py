@@ -16,7 +16,6 @@ import numpy as np
 
 from .. import core as nap
 
-
 _START_RE = re.compile(r"\b(start|Start|START)\b")
 _STOP_WORDS = ["stop", "Stop", "STOP", "end", "End", "END"]
 
@@ -79,9 +78,7 @@ def _build_events(raw_events):
             other_times = np.sort(np.array(other_times))
             col = []
             for i in range(len(iset)):
-                mask = (other_times >= iset.start[i]) & (
-                    other_times <= iset.end[i]
-                )
+                mask = (other_times >= iset.start[i]) & (other_times <= iset.end[i])
                 matches = other_times[mask]
                 col.append(matches[0] if len(matches) > 0 else np.nan)
             metadata[other_key] = col
@@ -481,9 +478,7 @@ class NeuroSuiteIO:
         """
         if filepath is None:
             if not self.evt_files:
-                raise FileNotFoundError(
-                    f"No .evt files found in {self.session_dir}"
-                )
+                raise FileNotFoundError(f"No .evt files found in {self.session_dir}")
             filepath = self.evt_files[0]
 
         filepath = Path(filepath)
