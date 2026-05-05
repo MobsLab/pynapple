@@ -4,14 +4,102 @@ Handles:
 - XML metadata parsing (channel count, sampling rates, channel groups)
 - Binary signal files (.dat, .eeg, .lfp) via memory mapping
 - Spike sorting results (.clu.N / .res.N pairs)
+- Event files (.evt) with automatic pairing of start/stop events into IntervalSets
 """
 
+import re
 import xml.etree.ElementTree as ET
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 
 from .. import core as nap
+
+
+_START_RE = re.compile(r"\b(start|Start|START)\b")
+_STOP_WORDS = ["stop", "Stop", "STOP", "end", "End", "END"]
+
+
+def _pair_start_stop(starts, stops):
+    """Pair each start with the first stop after it and before the next start."""
+    paired_s, paired_e = [], []
+    j = 0
+    for i, t0 in enumerate(starts):
+        t_next = starts[i + 1] if i + 1 < len(starts) else np.inf
+        while j < len(stops) and stops[j] <= t0:
+            j += 1
+        if j < len(stops) and stops[j] < t_next:
+            paired_s.append(t0)
+            paired_e.append(stops[j])
+            j += 1
+    return np.array(paired_s), np.array(paired_e)
+
+
+def _build_events(raw_events):
+    """Convert {category: [timestamps_s]} into pynapple objects.
+
+    Keys containing 'start'/'Start'/'START' are paired with their matching
+    stop key to form an IntervalSet.  Any remaining timestamps whose events
+    fall inside those intervals are attached as IntervalSet metadata.
+    Unpaired keys are returned as Ts objects.
+    """
+    result = {}
+    used = set()
+
+    for key in list(raw_events.keys()):
+        if key in used or not _START_RE.search(key):
+            continue
+
+        # Find corresponding stop key
+        start_word = _START_RE.search(key).group(0)
+        stop_key = None
+        for stop_word in _STOP_WORDS:
+            candidate = key.replace(start_word, stop_word)
+            if candidate != key and candidate in raw_events:
+                stop_key = candidate
+                break
+        if stop_key is None:
+            continue
+
+        starts = np.sort(np.array(raw_events[key]))
+        stops = np.sort(np.array(raw_events[stop_key]))
+        paired_s, paired_e = _pair_start_stop(starts, stops)
+        if len(paired_s) == 0:
+            continue
+
+        iset = nap.IntervalSet(start=paired_s, end=paired_e)
+        used.update([key, stop_key])
+
+        # Attach remaining timestamps as metadata (one value per interval)
+        metadata = {}
+        for other_key, other_times in raw_events.items():
+            if other_key in used:
+                continue
+            other_times = np.sort(np.array(other_times))
+            col = []
+            for i in range(len(iset)):
+                mask = (other_times >= iset.start[i]) & (
+                    other_times <= iset.end[i]
+                )
+                matches = other_times[mask]
+                col.append(matches[0] if len(matches) > 0 else np.nan)
+            metadata[other_key] = col
+            used.add(other_key)
+
+        if metadata:
+            iset.set_info(**metadata)
+
+        # Build a clean key: strip the start word and collapse extra spaces
+        iset_key = re.sub(r"\s+", " ", _START_RE.sub("", key)).strip() or key
+        result[iset_key] = iset
+
+    # Remaining keys become plain Ts objects
+    for key, times in raw_events.items():
+        if key not in used:
+            result[key] = nap.Ts(t=np.sort(np.array(times)))
+
+    return result
 
 
 def _text(parent, tag):
@@ -156,6 +244,7 @@ class NeuroSuiteIO:
     - ``basename.eeg`` or ``basename.lfp`` – LFP signal (int16 binary)
     - ``basename.clu.N`` / ``basename.res.N`` – spike cluster IDs and times
       for electrode group *N*
+    - ``basename.evt`` – event timestamps with category labels
 
     Parameters
     ----------
@@ -182,6 +271,8 @@ class NeuroSuiteIO:
         Detected .eeg / .lfp files.
     spike_groups : dict
         Mapping of shank number (str) to ``(clu_path, res_path)`` tuples.
+    evt_files : list of Path
+        Detected .evt files.
     """
 
     def __init__(self, path):
@@ -222,6 +313,7 @@ class NeuroSuiteIO:
         self.dat_files = self._find_files(".dat")
         self.lfp_files = self._find_files(".eeg") or self._find_files(".lfp")
         self.spike_groups = self._find_spike_groups()
+        self.evt_files = self._find_evt_files()
 
     # ------------------------------------------------------------------
     # File discovery helpers
@@ -234,6 +326,17 @@ class NeuroSuiteIO:
         if not files:
             files = sorted(self.session_dir.glob(f"*{extension}"))
         return files
+
+    def _find_evt_files(self):
+        """Return sorted list of *.evt, *.evt.*, and *.*.evt files for this session."""
+        exact = sorted(self.session_dir.glob(f"{self.basename}.evt"))
+        pre_tagged = sorted(self.session_dir.glob(f"{self.basename}.*.evt"))
+        post_tagged = sorted(self.session_dir.glob(f"{self.basename}.evt.*"))
+        if not exact and not pre_tagged and not post_tagged:
+            exact = sorted(self.session_dir.glob("*.evt"))
+            pre_tagged = sorted(self.session_dir.glob("*.*.evt"))
+            post_tagged = sorted(self.session_dir.glob("*.evt.*"))
+        return exact + pre_tagged + post_tagged
 
     def _find_spike_groups(self):
         """Find paired .clu.N / .res.N files and return a dict keyed by
@@ -355,3 +458,42 @@ class NeuroSuiteIO:
         return nap.TsGroup(
             ts_dict, time_support=time_support, metadata={"group": group}
         )
+
+    def load_events(self, filepath=None):
+        """Load a NeuroSuite .evt file and return a dict of pynapple objects.
+
+        Keys containing 'start'/'Start'/'START' are paired with their
+        matching stop key to produce an :class:`~pynapple.IntervalSet`.
+        Timestamps from other categories that fall within those intervals
+        are attached as IntervalSet metadata.  Any unpaired categories are
+        returned as :class:`~pynapple.Ts` objects.
+
+        Parameters
+        ----------
+        filepath : str or Path, optional
+            Path to the .evt file.  If *None*, the first discovered .evt file
+            in the session directory is used.
+
+        Returns
+        -------
+        dict
+            Mapping of category/base-name to IntervalSet or Ts.
+        """
+        if filepath is None:
+            if not self.evt_files:
+                raise FileNotFoundError(
+                    f"No .evt files found in {self.session_dir}"
+                )
+            filepath = self.evt_files[0]
+
+        filepath = Path(filepath)
+        raw_events = defaultdict(list)
+
+        with open(filepath, "r") as f:
+            for line in f:
+                parts = line.strip().split("\t")
+                if len(parts) < 2:
+                    continue
+                raw_events[parts[1]].append(float(parts[0]) / 1000.0)  # ms -> s
+
+        return _build_events(raw_events)
