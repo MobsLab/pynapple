@@ -7,7 +7,12 @@ import numpy as np
 import pytest
 
 import pynapple as nap
-from pynapple.io.interface_neurosuite import NeuroSuiteIO, parse_neuroscope_xml
+from pynapple.io.interface_neurosuite import (
+    NeuroSuiteIO,
+    _build_events,
+    _pair_start_stop,
+    parse_neuroscope_xml,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers to generate synthetic Neuroscope session files
@@ -402,3 +407,280 @@ class TestLoadSpikes:
         ts2 = ns.load_spikes("2")
         assert isinstance(ts1, nap.TsGroup)
         assert isinstance(ts2, nap.TsGroup)
+
+
+# ---------------------------------------------------------------------------
+# Helpers: evt file generation
+# ---------------------------------------------------------------------------
+
+
+def _make_evt(session_dir, filename, events):
+    """Write a .evt file. *events* is a list of (timestamp_ms, label) tuples."""
+    evt_path = session_dir / filename
+    with open(evt_path, "w") as f:
+        for t_ms, label in events:
+            f.write(f"{t_ms:.6f}\t{label}\n")
+    return evt_path
+
+
+# ---------------------------------------------------------------------------
+# Tests: _pair_start_stop
+# ---------------------------------------------------------------------------
+
+
+class TestPairStartStop:
+    def test_one_to_one_pairing(self):
+        starts = np.array([1.0, 3.0, 6.0])
+        stops = np.array([2.0, 4.0, 7.0])
+        s, e = _pair_start_stop(starts, stops)
+        np.testing.assert_array_equal(s, [1.0, 3.0, 6.0])
+        np.testing.assert_array_equal(e, [2.0, 4.0, 7.0])
+
+    def test_stop_after_next_start_is_unpaired(self):
+        # stop at 4.0 is >= next start at 3.0, so start at 1.0 goes unpaired
+        starts = np.array([1.0, 3.0])
+        stops = np.array([4.0, 5.0])
+        s, e = _pair_start_stop(starts, stops)
+        np.testing.assert_array_equal(s, [3.0])
+        np.testing.assert_array_equal(e, [4.0])
+
+    def test_stop_before_start_is_skipped(self):
+        starts = np.array([5.0])
+        stops = np.array([2.0, 8.0])
+        s, e = _pair_start_stop(starts, stops)
+        np.testing.assert_array_equal(s, [5.0])
+        np.testing.assert_array_equal(e, [8.0])
+
+    def test_no_stops_returns_empty(self):
+        s, e = _pair_start_stop(np.array([1.0, 2.0]), np.array([]))
+        assert len(s) == 0
+        assert len(e) == 0
+
+    def test_empty_inputs_return_empty(self):
+        s, e = _pair_start_stop(np.array([]), np.array([]))
+        assert len(s) == 0
+        assert len(e) == 0
+
+    def test_single_pair(self):
+        s, e = _pair_start_stop(np.array([0.0]), np.array([1.0]))
+        np.testing.assert_array_equal(s, [0.0])
+        np.testing.assert_array_equal(e, [1.0])
+
+
+# ---------------------------------------------------------------------------
+# Tests: _build_events
+# ---------------------------------------------------------------------------
+
+
+class TestBuildEvents:
+    def test_lowercase_start_stop_becomes_intervalset(self):
+        raw = {"ripple start": [1.0, 3.0], "ripple stop": [2.0, 4.0]}
+        result = _build_events(raw)
+        assert "ripple" in result
+        assert isinstance(result["ripple"], nap.IntervalSet)
+        assert len(result["ripple"]) == 2
+
+    def test_intervalset_start_end_values(self):
+        raw = {"sleep start": [10.0, 30.0], "sleep stop": [20.0, 40.0]}
+        result = _build_events(raw)
+        iset = result["sleep"]
+        np.testing.assert_allclose(iset.start, [10.0, 30.0])
+        np.testing.assert_allclose(iset.end, [20.0, 40.0])
+
+    def test_capitalized_start_stop_variant(self):
+        raw = {"Run Start": [0.0, 5.0], "Run Stop": [2.0, 7.0]}
+        result = _build_events(raw)
+        assert "Run" in result
+        assert isinstance(result["Run"], nap.IntervalSet)
+
+    def test_uppercase_start_stop_variant(self):
+        raw = {"REM START": [0.0], "REM STOP": [10.0]}
+        result = _build_events(raw)
+        assert "REM" in result
+        assert isinstance(result["REM"], nap.IntervalSet)
+
+    def test_start_end_variant(self):
+        raw = {"epoch start": [1.0, 5.0], "epoch end": [3.0, 8.0]}
+        result = _build_events(raw)
+        assert "epoch" in result
+        assert isinstance(result["epoch"], nap.IntervalSet)
+
+    def test_unpaired_key_becomes_ts(self):
+        raw = {"stimulus": [1.0, 2.0, 3.0]}
+        result = _build_events(raw)
+        assert "stimulus" in result
+        assert isinstance(result["stimulus"], nap.Ts)
+        np.testing.assert_allclose(result["stimulus"].times(), [1.0, 2.0, 3.0])
+
+    def test_start_without_matching_stop_stays_as_ts(self):
+        raw = {"theta start": [1.0, 3.0]}
+        result = _build_events(raw)
+        assert "theta start" in result
+        assert isinstance(result["theta start"], nap.Ts)
+
+    def test_other_key_attached_as_intervalset_metadata(self):
+        raw = {
+            "ripple start": [1.0, 5.0],
+            "ripple stop": [2.0, 6.0],
+            "ripple peak": [1.5, 5.5],
+        }
+        result = _build_events(raw)
+        iset = result["ripple"]
+        assert "ripple peak" in iset.metadata.keys()
+        np.testing.assert_allclose(iset.metadata["ripple peak"], [1.5, 5.5])
+        assert "ripple peak" not in result
+
+    def test_second_start_stop_pair_consumed_as_metadata(self):
+        # _build_events processes one start/stop pair at a time; remaining keys
+        # (including a second category's start/stop) are attached as metadata
+        # of the first IntervalSet rather than forming their own IntervalSet.
+        raw = {
+            "sleep start": [0.0, 20.0],
+            "sleep stop": [10.0, 30.0],
+            "run start": [50.0],
+            "run stop": [60.0],
+        }
+        result = _build_events(raw)
+        assert isinstance(result["sleep"], nap.IntervalSet)
+        # "run start" / "run stop" are consumed as metadata (no overlap → NaN)
+        assert "run" not in result
+        assert "run start" in result["sleep"].metadata.keys()
+        assert "run stop" in result["sleep"].metadata.keys()
+
+    def test_no_pairs_all_ts(self):
+        raw = {"a": [1.0], "b": [2.0]}
+        result = _build_events(raw)
+        assert isinstance(result["a"], nap.Ts)
+        assert isinstance(result["b"], nap.Ts)
+
+
+# ---------------------------------------------------------------------------
+# Tests: _find_evt_files and load_events
+# ---------------------------------------------------------------------------
+
+
+class TestEvtFileDiscovery:
+    def test_exact_evt_file_found(self, session_dir):
+        _make_evt(session_dir, f"{BASENAME}.evt", [(100.0, "event")])
+        ns = NeuroSuiteIO(session_dir)
+        assert any(f.name == f"{BASENAME}.evt" for f in ns.evt_files)
+
+    def test_pre_tagged_evt_file_found(self, session_dir):
+        _make_evt(session_dir, f"{BASENAME}.rip.evt", [(100.0, "event")])
+        ns = NeuroSuiteIO(session_dir)
+        assert any("rip.evt" in f.name for f in ns.evt_files)
+
+    def test_post_tagged_evt_file_found(self, session_dir):
+        _make_evt(session_dir, f"{BASENAME}.evt.rip", [(100.0, "event")])
+        ns = NeuroSuiteIO(session_dir)
+        assert any("evt.rip" in f.name for f in ns.evt_files)
+
+    def test_no_evt_files_gives_empty_list(self, session_dir):
+        ns = NeuroSuiteIO(session_dir)
+        assert ns.evt_files == []
+
+    def test_multiple_evt_files_all_found(self, session_dir):
+        _make_evt(session_dir, f"{BASENAME}.evt", [(100.0, "x")])
+        _make_evt(session_dir, f"{BASENAME}.rip.evt", [(200.0, "y")])
+        ns = NeuroSuiteIO(session_dir)
+        assert len(ns.evt_files) == 2
+
+
+class TestLoadEvents:
+    def test_returns_intervalset_for_start_stop_pair(self, session_dir):
+        _make_evt(
+            session_dir,
+            f"{BASENAME}.evt",
+            [
+                (1000.0, "ripple start"),
+                (1500.0, "ripple stop"),
+                (3000.0, "ripple start"),
+                (3500.0, "ripple stop"),
+            ],
+        )
+        ns = NeuroSuiteIO(session_dir)
+        events = ns.load_events()
+        assert "ripple" in events
+        assert isinstance(events["ripple"], nap.IntervalSet)
+        assert len(events["ripple"]) == 2
+
+    def test_timestamps_converted_from_ms_to_s(self, session_dir):
+        _make_evt(
+            session_dir,
+            f"{BASENAME}.evt",
+            [(1000.0, "trial start"), (2000.0, "trial stop")],
+        )
+        ns = NeuroSuiteIO(session_dir)
+        iset = ns.load_events()["trial"]
+        np.testing.assert_allclose(iset.start, [1.0])
+        np.testing.assert_allclose(iset.end, [2.0])
+
+    def test_unpaired_events_returned_as_ts(self, session_dir):
+        _make_evt(
+            session_dir,
+            f"{BASENAME}.evt",
+            [(500.0, "stimulus"), (1500.0, "stimulus")],
+        )
+        ns = NeuroSuiteIO(session_dir)
+        events = ns.load_events()
+        assert "stimulus" in events
+        assert isinstance(events["stimulus"], nap.Ts)
+        np.testing.assert_allclose(events["stimulus"].times(), [0.5, 1.5])
+
+    def test_no_evt_files_raises_file_not_found(self, session_dir):
+        ns = NeuroSuiteIO(session_dir)
+        with pytest.raises(FileNotFoundError):
+            ns.load_events()
+
+    def test_explicit_filepath(self, session_dir, tmp_path):
+        evt_path = tmp_path / "custom.evt"
+        _make_evt(tmp_path, "custom.evt", [(1000.0, "run start"), (2000.0, "run stop")])
+        ns = NeuroSuiteIO(session_dir)
+        events = ns.load_events(filepath=evt_path)
+        assert "run" in events
+        assert isinstance(events["run"], nap.IntervalSet)
+
+    def test_uses_first_discovered_evt_file(self, session_dir):
+        _make_evt(
+            session_dir,
+            f"{BASENAME}.evt",
+            [(1000.0, "sleep start"), (2000.0, "sleep stop")],
+        )
+        ns = NeuroSuiteIO(session_dir)
+        events = ns.load_events()
+        assert "sleep" in events
+
+    def test_two_distinct_epoch_types_separate_files(self, session_dir):
+        sleep_path = _make_evt(
+            session_dir,
+            f"{BASENAME}.sleep.evt",
+            [(0.0, "sleep start"), (5000.0, "sleep stop")],
+        )
+        run_path = _make_evt(
+            session_dir,
+            f"{BASENAME}.run.evt",
+            [(10000.0, "run start"), (15000.0, "run stop")],
+        )
+        ns = NeuroSuiteIO(session_dir)
+        sleep_events = ns.load_events(filepath=sleep_path)
+        run_events = ns.load_events(filepath=run_path)
+        assert isinstance(sleep_events["sleep"], nap.IntervalSet)
+        assert isinstance(run_events["run"], nap.IntervalSet)
+
+    def test_metadata_from_nested_timestamps(self, session_dir):
+        _make_evt(
+            session_dir,
+            f"{BASENAME}.evt",
+            [
+                (1000.0, "ripple start"),
+                (1250.0, "ripple peak"),
+                (1500.0, "ripple stop"),
+                (3000.0, "ripple start"),
+                (3250.0, "ripple peak"),
+                (3500.0, "ripple stop"),
+            ],
+        )
+        ns = NeuroSuiteIO(session_dir)
+        iset = ns.load_events()["ripple"]
+        assert "ripple peak" in iset.metadata.keys()
+        np.testing.assert_allclose(iset.metadata["ripple peak"], [1.25, 3.25])
