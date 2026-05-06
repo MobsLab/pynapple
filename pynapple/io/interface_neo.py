@@ -1015,7 +1015,7 @@ class EphysReader(UserDict):
 
         Uses :class:`~pynapple.io.interface_neurosuite.NeuroSuiteIO` to
         discover files and parse XML metadata.  Populates ``self.data``
-        with entries for .dat, .eeg/.lfp, and .clu/.res files.
+        with entries for .dat, .eeg/.lfp, .clu/.res, and .evt files.
 
         Parameters
         ----------
@@ -1047,6 +1047,11 @@ class EphysReader(UserDict):
                 "type": "TsGroup",
                 "loader": lambda s=shank: ns.load_spikes(s),
             }
+
+        # --- .evt files (events) ---
+        for evt_file in ns.evt_files:
+            for category, ts in ns.load_events(evt_file).items():
+                self.data[category] = ts
 
         self._ns = ns  # Store the NeuroSuiteIO instance for use in loaders
 
