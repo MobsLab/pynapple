@@ -1,6 +1,18 @@
 # Releases
 
-### 0.11 (2026-03-29)
+### 0.11.1 (2026-05-06)
+
+- New `signal` module exposing `apply_hilbert_transform`, `compute_hilbert_envelope`, and `compute_hilbert_phase` for computing the Hilbert transform, signal envelope, and instantaneous phase of time series.
+- `detect_oscillatory_events` updated to use the Hilbert transform internally and to validate input types.
+- New `find_peaks` method for `Tsd` and `TsdFrame`, wrapping `scipy.signal.find_peaks` with support for epoch-restricted peak detection and optional return of peak properties.
+- New tutorial `tutorial_ripple_detection.md` demonstrating oscillatory event detection on hippocampal LFP data.
+- `NeuroSuiteIO` now reads epoch files and returns them as an `IntervalSet`.
+- Added `copy` method to `TsGroup`.
+- NWB loader now reads `ElectrodesTable` metadata when loading an `ElectricalSeries`.
+- Fixed time support propagation in `compute_perievent`.
+
+
+### 0.11.0 (2026-03-29)
 
 - New `EphysReader` class and `NeoSignalInterface` for reading electrophysiology files through the [Neo](https://neo.readthedocs.io) library. Supports a wide range of formats (Plexon, Open Ephys, Neuralynx, …) with lazy loading of analog signals.
 - New `NeuroSuiteIO` class for reading Neuroscope/NeuroSuite formatted data (binary `.dat`/`.eeg`/`.lfp` files and `.clu`/`.res` spike sorting results).

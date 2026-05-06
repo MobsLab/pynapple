@@ -164,7 +164,7 @@ plt.tight_layout();
 
 
 Using `detect_oscillatory_events`
-=================================
+------------------------------
 
 For your convenience, we put the entire process into a single 
 function called [`detect_oscillatory_events`](pynapple.process.signal.detect_oscillatory_events).
