@@ -18,9 +18,6 @@ pynapple: python neural analysis package
    GPU acceleration <pynajax>
    Citing <citing>
 
-
-|
-
 .. grid:: 1 1 2 2
 
    .. grid-item::
@@ -56,6 +53,12 @@ pynapple: python neural analysis package
             :shadow:
 
             Citing
+
+         .. button-link:: https://pynapple-org.github.io/pynaviz/
+            :color: primary
+            :shadow:
+
+            Visualization (pynaviz)
 
 
 .. grid:: 1 1 6 6
