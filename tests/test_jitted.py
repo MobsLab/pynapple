@@ -100,7 +100,9 @@ def test_jitrestrict_empty_epochs():
 def test_jitrestrict_with_count_empty_time_array():
     ep, ts, tsd, tsdframe = get_example_dataset()
     empty = np.array([], dtype=np.float64)
-    ix, count = nap.core._jitted_functions.jitrestrict_with_count(empty, ep.start, ep.end)
+    ix, count = nap.core._jitted_functions.jitrestrict_with_count(
+        empty, ep.start, ep.end
+    )
     assert len(ix) == 0
     assert len(count) == len(ep)
     np.testing.assert_array_equal(count, np.zeros(len(ep), dtype=np.int64))
@@ -109,7 +111,9 @@ def test_jitrestrict_with_count_empty_time_array():
 def test_jitrestrict_with_count_empty_epochs():
     ep, ts, tsd, tsdframe = get_example_dataset()
     empty = np.array([], dtype=np.float64)
-    ix, count = nap.core._jitted_functions.jitrestrict_with_count(tsd.index, empty, empty)
+    ix, count = nap.core._jitted_functions.jitrestrict_with_count(
+        tsd.index, empty, empty
+    )
     assert len(ix) == 0
     assert len(count) == 0
 
