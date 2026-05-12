@@ -11,6 +11,9 @@ def jitrestrict(time_array, starts, ends):
     m = len(starts)
     ix = np.zeros(n, dtype=np.int64)
 
+    if n == 0 or m == 0:
+        return np.empty(0, dtype=np.int64)
+
     k = 0
     t = 0
     x = 0
@@ -52,11 +55,14 @@ def jitrestrict_with_count(time_array, starts, ends, dtype=np.int64):
     ix = np.zeros(n, dtype=np.int64)
     count = np.zeros(m, dtype=dtype)
 
+    if n == 0 or m == 0:
+        return np.empty(0, dtype=np.int64), np.zeros(m, dtype=dtype)
+
     k = 0
     t = 0
     x = 0
 
-    while ends[k] < time_array[t]:
+    while k < m and ends[k] < time_array[t]:
         k += 1
 
     while k < m:
