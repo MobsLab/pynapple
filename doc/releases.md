@@ -1,5 +1,14 @@
 # Releases
 
+### 0.11.2 (2026-05-13)
+
+- Fixed out-of-bounds memory access in `jitrestrict`, `jitrestrict_with_count`, `jitin_interval`, `jitremove_nan`, `jitthreshold`, and `jitunion_isets` when called with empty time arrays or empty epoch sets. With Numba JIT enabled these manifested as random crashes or segfaults; with JIT disabled they raised `IndexError`.
+- Fixed missing `k < m` bounds guard in `jitrestrict_with_count` and `jitin_interval`, which could cause an out-of-bounds read when all epoch ends precede the first timestamp.
+- Fixed `jitthreshold` producing an out-of-bounds access when the input contains a single time point.
+- Fixed undefined `nan_cond` variable in `jitvaluefrom` when an epoch contains exactly one target timestamp and mode is `before` or `closest`, which could silently return wrong results instead of `NaN`.
+- Fixed `compute_perievent` crashing on `TsGroup` inputs when any event has no spikes within the requested window.
+
+
 ### 0.11.1 (2026-05-06)
 
 - New `signal` module exposing `apply_hilbert_transform`, `compute_hilbert_envelope`, and `compute_hilbert_phase` for computing the Hilbert transform, signal envelope, and instantaneous phase of time series.
