@@ -180,6 +180,10 @@ def jitvaluefrom(
                         if mode == 2:
                             new_interval = time_target_array[i - 1] - time_array[t]
                             nan_cond = new_interval < 0
+                        elif mode == 0:
+                            nan_cond = interval > 0
+                        else:
+                            nan_cond = False
                         if nan_cond:
                             idx[t] = np.nan
                     i -= 1  # Revert to the last valid index
@@ -247,10 +251,13 @@ def jitin_interval(time_array, starts, ends):
     m = len(starts)
     data = np.ones(n, dtype=np.float64) * np.nan
 
+    if n == 0 or m == 0:
+        return data
+
     k = 0
     t = 0
 
-    while ends[k] < time_array[t]:
+    while k < m and ends[k] < time_array[t]:
         k += 1
 
     while k < m:
@@ -286,6 +293,9 @@ def jitremove_nan(time_array, index_nan):
     n = len(time_array)
     ix_start = np.zeros(n, dtype=np.bool_)
     ix_end = np.zeros(n, dtype=np.bool_)
+
+    if n == 0:
+        return time_array[ix_start], time_array[ix_end]
 
     if not index_nan[0]:  # First start
         ix_start[0] = True
@@ -330,12 +340,21 @@ def jitthreshold(time_array, data_array, starts, ends, thr, method="above"):
     new_start = np.zeros(n, dtype=np.float64)
     new_end = np.zeros(n, dtype=np.float64)
 
-    while time_array[t] < starts[k]:
+    if n == 0:
+        return (time_array[ix], data_array[ix], new_start[ix_start], new_end[ix_end])
+
+    while k < len(starts) and time_array[t] < starts[k]:
         k += 1
 
     if ix[t]:
         ix_start[t] = 1
         new_start[t] = time_array[t]
+
+    if n == 1:
+        if ix[t]:
+            ix_end[t] = 1
+            new_end[t] = time_array[t]
+        return (time_array[ix], data_array[ix], new_start[ix_start], new_end[ix_end])
 
     t += 1
 
@@ -707,6 +726,9 @@ def jitunion_isets(starts, ends):
     n = starts.shape[0]
     new_start = np.zeros(n, dtype=np.float64)
     new_end = np.zeros(n, dtype=np.float64)
+
+    if n == 0:
+        return (new_start, new_end)
 
     ct = 0
     new_start[ct] = starts[0]

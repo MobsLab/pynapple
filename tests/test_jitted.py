@@ -551,3 +551,127 @@ def test_jitin_interval():
         inep2[np.isnan(inep2)] = -1
 
         np.testing.assert_array_equal(inep, inep2)
+
+
+# ── Edge-case tests ────────────────────────────────────────────────────────────
+
+def test_jitrestrict_empty_time_array():
+    starts = np.array([0.0, 5.0])
+    ends = np.array([2.0, 8.0])
+    ix = nap.core._jitted_functions.jitrestrict(np.array([], dtype=np.float64), starts, ends)
+    assert len(ix) == 0
+
+
+def test_jitrestrict_empty_epochs():
+    time_array = np.array([1.0, 2.0, 3.0])
+    ix = nap.core._jitted_functions.jitrestrict(
+        time_array, np.array([], dtype=np.float64), np.array([], dtype=np.float64)
+    )
+    assert len(ix) == 0
+
+
+def test_jitrestrict_with_count_empty_time_array():
+    starts = np.array([0.0, 5.0])
+    ends = np.array([2.0, 8.0])
+    ix, count = nap.core._jitted_functions.jitrestrict_with_count(
+        np.array([], dtype=np.float64), starts, ends
+    )
+    assert len(ix) == 0
+    np.testing.assert_array_equal(count, np.zeros(2, dtype=np.int64))
+
+
+def test_jitrestrict_with_count_empty_epochs():
+    time_array = np.array([1.0, 2.0, 3.0])
+    ix, count = nap.core._jitted_functions.jitrestrict_with_count(
+        time_array, np.array([], dtype=np.float64), np.array([], dtype=np.float64)
+    )
+    assert len(ix) == 0
+    assert len(count) == 0
+
+
+def test_jitin_interval_empty_time_array():
+    starts = np.array([0.0])
+    ends = np.array([10.0])
+    data = nap.core._jitted_functions.jitin_interval(
+        np.array([], dtype=np.float64), starts, ends
+    )
+    assert len(data) == 0
+
+
+def test_jitin_interval_empty_epochs():
+    time_array = np.array([1.0, 2.0, 3.0])
+    data = nap.core._jitted_functions.jitin_interval(
+        time_array, np.array([], dtype=np.float64), np.array([], dtype=np.float64)
+    )
+    assert len(data) == 3
+    assert np.all(np.isnan(data))
+
+
+def test_jitremove_nan_empty():
+    starts, ends = nap.core._jitted_functions.jitremove_nan(
+        np.array([], dtype=np.float64), np.array([], dtype=np.bool_)
+    )
+    assert len(starts) == 0
+    assert len(ends) == 0
+
+
+def test_jitthreshold_single_element_above():
+    time_array = np.array([5.0])
+    data_array = np.array([1.0])
+    starts = np.array([0.0])
+    ends = np.array([10.0])
+    t, d, s, e = nap.core._jitted_functions.jitthreshold(
+        time_array, data_array, starts, ends, 0.5
+    )
+    assert len(t) == 1
+    assert len(s) == 1
+    assert len(e) == 1
+
+
+def test_jitthreshold_single_element_below():
+    time_array = np.array([5.0])
+    data_array = np.array([0.0])
+    starts = np.array([0.0])
+    ends = np.array([10.0])
+    t, d, s, e = nap.core._jitted_functions.jitthreshold(
+        time_array, data_array, starts, ends, 0.5
+    )
+    assert len(t) == 0
+    assert len(s) == 0
+    assert len(e) == 0
+
+
+def test_jitunion_isets_empty():
+    s, e = nap.core._jitted_functions.jitunion_isets(
+        np.array([], dtype=np.float64), np.array([], dtype=np.float64)
+    )
+    assert len(s) == 0
+    assert len(e) == 0
+
+
+def test_jitvaluefrom_single_target_mode_before():
+    # count_target[k]==1 triggers undefined nan_cond when mode=0
+    time_array = np.array([1.0, 2.0])
+    time_target = np.array([1.5])
+    count = np.array([2], dtype=np.int64)
+    count_target = np.array([1], dtype=np.int64)
+    starts = np.array([0.0])
+    idx = nap.core._jitted_functions.jitvaluefrom(
+        time_array, time_target, count, count_target, starts, 0
+    )
+    assert np.isnan(idx[0])  # target 1.5 is after timestamp 1.0 → no before-target
+    assert idx[1] == 0.0     # target 1.5 is before timestamp 2.0 → target index 0
+
+
+def test_jitvaluefrom_single_target_mode_after():
+    # count_target[k]==1, mode=2 (already handled, regression guard)
+    time_array = np.array([1.0, 2.0])
+    time_target = np.array([1.5])
+    count = np.array([2], dtype=np.int64)
+    count_target = np.array([1], dtype=np.int64)
+    starts = np.array([0.0])
+    idx = nap.core._jitted_functions.jitvaluefrom(
+        time_array, time_target, count, count_target, starts, 2
+    )
+    assert idx[0] == 0.0    # target 1.5 is after timestamp 1.0 → target index 0
+    assert np.isnan(idx[1]) # target 1.5 is before timestamp 2.0 → no after-target
