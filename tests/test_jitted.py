@@ -555,10 +555,13 @@ def test_jitin_interval():
 
 # ── Edge-case tests ────────────────────────────────────────────────────────────
 
+
 def test_jitrestrict_empty_time_array():
     starts = np.array([0.0, 5.0])
     ends = np.array([2.0, 8.0])
-    ix = nap.core._jitted_functions.jitrestrict(np.array([], dtype=np.float64), starts, ends)
+    ix = nap.core._jitted_functions.jitrestrict(
+        np.array([], dtype=np.float64), starts, ends
+    )
     assert len(ix) == 0
 
 
@@ -660,7 +663,7 @@ def test_jitvaluefrom_single_target_mode_before():
         time_array, time_target, count, count_target, starts, 0
     )
     assert np.isnan(idx[0])  # target 1.5 is after timestamp 1.0 → no before-target
-    assert idx[1] == 0.0     # target 1.5 is before timestamp 2.0 → target index 0
+    assert idx[1] == 0.0  # target 1.5 is before timestamp 2.0 → target index 0
 
 
 def test_jitvaluefrom_single_target_mode_after():
@@ -673,5 +676,5 @@ def test_jitvaluefrom_single_target_mode_after():
     idx = nap.core._jitted_functions.jitvaluefrom(
         time_array, time_target, count, count_target, starts, 2
     )
-    assert idx[0] == 0.0    # target 1.5 is after timestamp 1.0 → target index 0
-    assert np.isnan(idx[1]) # target 1.5 is before timestamp 2.0 → no after-target
+    assert idx[0] == 0.0  # target 1.5 is after timestamp 1.0 → target index 0
+    assert np.isnan(idx[1])  # target 1.5 is before timestamp 2.0 → no after-target
