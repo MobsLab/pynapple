@@ -260,6 +260,7 @@ def compute_tuning_curves(
         else data.columns if isinstance(data, nap.TsdFrame) else [0]
     )
     tcs = np.zeros([len(keys), *occupancy.shape])
+    full_counts = np.zeros([len(keys), *occupancy.shape])
     if isinstance(data, (nap.TsGroup, nap.Ts)):
         # SPIKES
         if isinstance(data, nap.Ts):
@@ -273,7 +274,10 @@ def compute_tuning_curves(
                 data[n].value_from(features, mode=mode),
                 bins=bin_edges,
             )[0]
-            counts = tcs[i].copy()
+            full_counts[i] = np.histogramdd(
+                data[n].value_from(features, mode=mode),
+                bins=bin_edges,
+            )[0]
         with np.errstate(divide="ignore", invalid="ignore"):
             if not return_counts:
                 tcs = (tcs / occupancy) * fs
@@ -290,13 +294,18 @@ def compute_tuning_curves(
                 weights=data[:, i],
                 bins=bin_edges,
             )[0]
+            full_counts[i] = np.histogramdd(
+                values,
+                weights=data[:, i],
+                bins=bin_edges,
+            )[0]
         with np.errstate(divide="ignore", invalid="ignore"):
             if not return_counts:
                 tcs /= counts
                 tcs[np.isnan(tcs)] = 0.0
                 tcs[:, occupancy == 0.0] = np.nan
 
-    attrs = {"occupancy": occupancy, "bin_edges": bin_edges, "fs": fs, "counts": counts}
+    attrs = {"occupancy": occupancy, "bin_edges": bin_edges, "fs": fs, "counts": full_counts}
     if isinstance(data, nap.TsGroup):
         attrs["rates"] = data.rates
     tcs = xr.DataArray(
