@@ -23,6 +23,7 @@ def compute_tuning_curves(
     feature_names=None,
     return_pandas=False,
     return_counts=False,
+    mode="closest",
 ):
     """
     Computes n-dimensional tuning curves relative to n features.
@@ -269,7 +270,7 @@ def compute_tuning_curves(
                     f"TsGroup entry {n} was not a Ts, but treating it as one!"
                 )
             tcs[i] = np.histogramdd(
-                data[n].value_from(features),
+                data[n].value_from(features, mode=mode),
                 bins=bin_edges,
             )[0]
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -277,7 +278,7 @@ def compute_tuning_curves(
                 tcs = (tcs / occupancy) * fs
     else:
         # RATES
-        values = data.value_from(features)
+        values = data.value_from(features, mode=mode)
         if isinstance(data, nap.Tsd):
             data = np.expand_dims(data.values, -1)
         counts = np.histogramdd(values, bins=bin_edges)[0]
