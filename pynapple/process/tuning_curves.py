@@ -273,6 +273,7 @@ def compute_tuning_curves(
                 data[n].value_from(features, mode=mode),
                 bins=bin_edges,
             )[0]
+            counts = tcs[i].copy()
         with np.errstate(divide="ignore", invalid="ignore"):
             if not return_counts:
                 tcs = (tcs / occupancy) * fs
@@ -289,11 +290,13 @@ def compute_tuning_curves(
                 weights=data[:, i],
                 bins=bin_edges,
             )[0]
-        tcs /= counts
-        tcs[np.isnan(tcs)] = 0.0
-        tcs[:, occupancy == 0.0] = np.nan
+        with np.errstate(divide="ignore", invalid="ignore"):
+            if not return_counts:
+                tcs /= counts
+                tcs[np.isnan(tcs)] = 0.0
+                tcs[:, occupancy == 0.0] = np.nan
 
-    attrs = {"occupancy": occupancy, "bin_edges": bin_edges, "fs": fs}
+    attrs = {"occupancy": occupancy, "bin_edges": bin_edges, "fs": fs, "counts": counts}
     if isinstance(data, nap.TsGroup):
         attrs["rates"] = data.rates
     tcs = xr.DataArray(
