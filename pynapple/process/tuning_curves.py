@@ -305,7 +305,12 @@ def compute_tuning_curves(
                 tcs[np.isnan(tcs)] = 0.0
                 tcs[:, occupancy == 0.0] = np.nan
 
-    attrs = {"occupancy": occupancy, "bin_edges": bin_edges, "fs": fs, "counts": full_counts}
+    attrs = {
+        "occupancy": occupancy,
+        "bin_edges": bin_edges,
+        "fs": fs,
+        "counts": full_counts,
+    }
     if isinstance(data, nap.TsGroup):
         attrs["rates"] = data.rates
     tcs = xr.DataArray(
